@@ -2,58 +2,26 @@
 	admin off
 }
 
-# Railway terminates TLS at its edge and forwards plain HTTP to whatever
-# port this container listens on ($PORT, injected by Railway for every
-# service). This is why there's no domain block / automatic HTTPS here,
-# unlike a bare-metal Caddy deploy: Caddy's own ACME would never be
-# reachable from the internet on port 443 behind Railway's edge.
+# Railway terminates TLS at its edge and forwards plain HTTP to $PORT.
+# Routing protocol: see ROUTING.md.
 :{$PORT:8080} {
 	encode gzip
 
-	# Block scanner / bot probes
 	@probes path /.env* /.git* /wp-* *.php /admin/*
 	respond @probes 403
 
-	# Admin routes to core-api
-	handle /v1/admin/redis* {
-		header Cache-Control "no-store"
-		reverse_proxy {$CORE_API_UPSTREAM:core-api:3001}
+	handle /health {
+		respond "ok" 200
 	}
 
-	# Core public API (auth, me, tasks, devices, …)
 	handle /v1/* {
-		reverse_proxy {$CORE_API_UPSTREAM:core-api:3001}
+		reverse_proxy {$CORE_API_UPSTREAM}
 	}
 
-	# Explicit Voice Bridge routes
 	handle /bridge/* {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
-	}
-	handle /auth/* {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
-	}
-	handle /twilio/* {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
-	}
-	handle /ws* {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
-	}
-	handle /health* {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
+		reverse_proxy {$BRIDGE_UPSTREAM}
 	}
 
-	# Root landing route: strictly GET/HEAD to bridge
-	@root_get {
-		method GET HEAD
-		path /
-	}
-	handle @root_get {
-		reverse_proxy {$BRIDGE_UPSTREAM:bridge:3000}
-	}
-
-	# Default catch-all for unknown routes. /internal/* and /channels/*
-	# (service-to-service) are deliberately not proxied here: they're
-	# reachable only over Railway's private network, service-to-service.
 	handle {
 		respond "Not Found" 404
 	}
