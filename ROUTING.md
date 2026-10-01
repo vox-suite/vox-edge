@@ -5,7 +5,7 @@ One public origin (`api.voxagent.in`) is served by this edge. Every path belongs
 | Prefix | Served by | Public | Purpose |
 |---|---|---|---|
 | `/v1/**` | core-api | yes | Versioned client API |
-| `/bridge/**` | bridge | yes | Third-party webhooks and media streams (Twilio, WhatsApp) and desktop voice |
+| `/bridge/**` | bridge | yes | Third-party webhooks and media streams (Twilio, WhatsApp) |
 | `/internal/v1/**` | core-api, bridge | no | Service-to-service only. The edge never routes it |
 | `/health` | edge | yes | Edge liveness |
 | `/health/live`, `/health/ready` | core-api, bridge | no | Per-service probes for the platform |
@@ -31,7 +31,7 @@ Filters and pagination go in the JSON body, never the query string. Send `{}` wh
 
 ## Bridge (`/bridge`)
 
-`/bridge/<channel>/<surface>[/<sub>]`, for example `/bridge/twilio/voice`, `/bridge/twilio/voice/stream`, `/bridge/wa`, `/bridge/desktop/voice/session`.
+`/bridge/<channel>/<surface>[/<sub>]`, for example `/bridge/twilio/voice`, `/bridge/twilio/voice/stream`, `/bridge/wa`.
 
 ## Internal (`/internal/v1`)
 
