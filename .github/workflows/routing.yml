@@ -1,0 +1,28 @@
+name: Edge routing gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  routing:
+    name: Caddy configuration and mock routing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image and extract its Caddy binary
+        run: |
+          docker build --tag vox-edge-test .
+          container=$(docker create vox-edge-test)
+          trap 'docker rm "$container"' EXIT
+          docker cp "$container:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          "$RUNNER_TEMP/caddy" version
+      - name: Validate configuration and exercise mock upstreams
+        env:
+          CADDY_BIN: ${{ runner.temp }}/caddy
+        run: python3 tests/routing.py
