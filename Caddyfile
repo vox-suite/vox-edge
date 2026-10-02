@@ -8,7 +8,9 @@
 	encode gzip
 
 	@probes path /.env* /.git* /wp-* *.php /admin/*
-	respond @probes 403
+	handle @probes {
+		respond 403
+	}
 
 	handle /health {
 		respond "ok" 200
