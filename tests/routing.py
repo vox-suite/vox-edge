@@ -137,14 +137,18 @@ class Routing(unittest.TestCase):
                               'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n').encode())
                 header = b''
                 while not header.endswith(b'\r\n\r\n'):
-                    header += sock.recv(1)
+                    chunk = sock.recv(1)
+                    self.assertTrue(chunk, 'upstream closed during upgrade')
+                    header += chunk
                     self.assertLess(len(header), 8192)
                 self.assertIn(b'101 Switching Protocols', header)
                 # After a protocol upgrade Caddy tunnels bytes, without interpreting frames.
                 sock.sendall(b'ping')
                 received = b''
                 while len(received) < 4:
-                    received += sock.recv(4 - len(received))
+                    chunk = sock.recv(4 - len(received))
+                    self.assertTrue(chunk, 'upgraded tunnel closed before echo')
+                    received += chunk
                 self.assertEqual(received, b'ping')
                 self.assertEqual(upstream.received[-1][:2], ('GET', path))
 
