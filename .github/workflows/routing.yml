@@ -25,4 +25,6 @@ jobs:
       - name: Validate configuration and exercise mock upstreams
         env:
           CADDY_BIN: ${{ runner.temp }}/caddy
-        run: python3 tests/routing.py
+        run: |
+          python3 tests/routing.py
+          python3 -B tests/secret_sync.py
