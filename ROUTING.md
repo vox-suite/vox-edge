@@ -1,6 +1,6 @@
 # Vox routing protocol
 
-One public origin (`api.voxagent.in`) is served by this edge. Every path belongs to exactly one namespace.
+One public origin (`api.callvox.in`) is served by this edge. Every path belongs to exactly one namespace.
 
 | Prefix | Served by | Public | Purpose |
 |---|---|---|---|
