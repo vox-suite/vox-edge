@@ -21,25 +21,33 @@ class SecretSync(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(RuntimeError):
                     sync.resolve_railway_environment('token', 'p', name)
 
-    def test_allowlist_is_explicit_unique_and_exact(self):
-        self.assertEqual(sync.selected_keys('GEMINI_API_KEY,BRIDGE_TOKEN'), ['GEMINI_API_KEY', 'BRIDGE_TOKEN'])
-        for value in (None, '', 'A,', 'A,A', 'bad-name', '*'):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                sync.selected_keys(value)
+    def test_discovers_all_secret_names(self):
+        result = sync.subprocess.CompletedProcess([], 0, stdout='[{"name":"projects/g/secrets/A"},{"name":"projects/g/secrets/B"}]')
+        with patch.object(sync.subprocess, 'run', return_value=result) as run:
+            self.assertEqual(sync.list_gsm_secrets('g'), ['A', 'B'])
+            self.assertIn('--project=g', run.call_args.args[0])
+            self.assertNotIn('--filter', run.call_args.args[0])
+
+    def test_discovery_failure_prevents_writes(self):
+        env = {'GCP_PROJECT_ID': 'g', 'RAILWAY_TOKEN': 't', 'RAILWAY_PROJECT_ID': 'p', 'RAILWAY_ENVIRONMENT_ID': 'stage'}
+        with patch.dict(os.environ, env, clear=True), patch.object(sync, 'resolve_railway_environment', return_value=('stage', 'staging')), patch.object(sync.subprocess, 'run', side_effect=sync.subprocess.CalledProcessError(1, 'gcloud')), patch.object(sync, 'upsert_railway_shared_variables') as write:
+            with self.assertRaisesRegex(RuntimeError, 'Cannot list GSM secrets'):
+                sync.main()
+            write.assert_not_called()
 
     def test_unreadable_key_prevents_all_writes_without_alias_fallback(self):
         env = {'GCP_PROJECT_ID': 'g', 'RAILWAY_TOKEN': 't', 'RAILWAY_PROJECT_ID': 'p',
-               'RAILWAY_ENVIRONMENT_ID': 'stage', 'SECRET_KEYS': 'A,B'}
-        with patch.dict(os.environ, env, clear=True), patch.object(sync, 'resolve_railway_environment', return_value=('stage', 'staging')), patch.object(sync, 'fetch_gsm_secret', side_effect=['exact\n', None]) as fetch, patch.object(sync, 'upsert_railway_shared_variables') as write:
+               'RAILWAY_ENVIRONMENT_ID': 'stage'}
+        with patch.dict(os.environ, env, clear=True), patch.object(sync, 'resolve_railway_environment', return_value=('stage', 'staging')), patch.object(sync, 'list_gsm_secrets', return_value=['A', 'B']), patch.object(sync, 'fetch_gsm_secret', side_effect=['exact\n', None]) as fetch, patch.object(sync, 'upsert_railway_shared_variables') as write:
             with self.assertRaises(RuntimeError):
                 sync.main()
             self.assertEqual(fetch.call_count, 2)
             write.assert_not_called()
 
-    def test_selected_values_preserve_exact_secret_bytes(self):
+    def test_discovered_values_preserve_exact_secret_bytes(self):
         env = {'GCP_PROJECT_ID': 'g', 'RAILWAY_TOKEN': 't', 'RAILWAY_PROJECT_ID': 'p',
-               'RAILWAY_ENVIRONMENT_ID': 'stage', 'SECRET_KEYS': 'A'}
-        with patch.dict(os.environ, env, clear=True), patch.object(sync, 'resolve_railway_environment', return_value=('stage', 'staging')), patch.object(sync, 'fetch_gsm_secret', return_value=' whitespace\n'), patch.object(sync, 'upsert_railway_shared_variables') as write:
+               'RAILWAY_ENVIRONMENT_ID': 'stage'}
+        with patch.dict(os.environ, env, clear=True), patch.object(sync, 'resolve_railway_environment', return_value=('stage', 'staging')), patch.object(sync, 'list_gsm_secrets', return_value=['A']), patch.object(sync, 'fetch_gsm_secret', return_value=' whitespace\n'), patch.object(sync, 'upsert_railway_shared_variables') as write:
             sync.main()
             write.assert_called_once_with('t', 'p', 'stage', {'A': ' whitespace\n'})
 

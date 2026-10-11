@@ -107,14 +107,24 @@ def resolve_railway_environment(token: str, project_id: str, requested_env: str 
     return matches[0]["id"], matches[0]["name"]
 
 
-def selected_keys(value: str | None) -> list[str]:
-    keys = [key.strip() for key in (value or "").split(",")]
-    if not keys or any(not key for key in keys) or len(set(keys)) != len(keys):
-        raise ValueError("SECRET_KEYS must contain an explicit nonempty unique allowlist.")
-    import re
-    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in keys):
-        raise ValueError("SECRET_KEYS entries must be exact environment-variable names.")
-    return keys
+def list_gsm_secrets(gcp_project: str) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["gcloud", "secrets", "list", f"--project={gcp_project}", "--format=json(name)"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True,
+        )
+    except subprocess.CalledProcessError:
+        raise RuntimeError("Cannot list GSM secrets; no variables have been written.") from None
+    try:
+        secrets = json.loads(result.stdout)
+        if not isinstance(secrets, list):
+            raise ValueError
+        names = [secret["name"].rsplit("/", 1)[-1] for secret in secrets]
+        if any(not name for name in names) or len(set(names)) != len(names):
+            raise ValueError
+        return sorted(names)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise RuntimeError("Invalid GSM secret list; no variables have been written.") from None
 
 
 def fetch_gsm_secret(gcp_project: str, secret_name: str) -> str | None:
@@ -154,7 +164,7 @@ def upsert_railway_shared_variables(token: str, project_id: str, environment_id:
         print("✓ Successfully upserted all shared variables via batch API!")
         return
     except Exception as e:
-        print("Batch upsert failed; attempting explicitly selected variables individually.")
+        print("Batch upsert failed; attempting all collected variables individually.")
 
     # Fallback: upsert one by one
     single_mutation = """
@@ -197,7 +207,6 @@ def main():
     if not railway_project_id:
         sys.exit("Error: RAILWAY_PROJECT_ID environment variable is missing.")
 
-    keys_to_fetch = selected_keys(os.environ.get("SECRET_KEYS"))
     if not railway_env_input:
         sys.exit("Error: RAILWAY_ENVIRONMENT_ID must be explicit.")
 
@@ -205,7 +214,8 @@ def main():
     env_id, env_name = resolve_railway_environment(railway_token, railway_project_id, railway_env_input)
     print(f"Target Environment: '{env_name}' (ID: {env_id})")
 
-    print(f"Using explicitly selected keys ({len(keys_to_fetch)} keys).")
+    keys_to_fetch = list_gsm_secrets(gcp_project)
+    print(f"Discovered {len(keys_to_fetch)} secrets; syncing all secrets.")
 
     collected_secrets = {}
     print(f"\nFetching secrets from Google Secret Manager (Project: {gcp_project})...")
@@ -215,7 +225,7 @@ def main():
             collected_secrets[key] = val
             print(f"  ✓ Fetched {key}")
         else:
-            raise RuntimeError(f"Cannot read selected secret {key}; no variables have been written.")
+            raise RuntimeError(f"Cannot read GSM secret {key}; no variables have been written.")
 
     if not collected_secrets:
         print("No secrets found to sync.")
